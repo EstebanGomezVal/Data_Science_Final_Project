@@ -30,8 +30,6 @@ Este repositorio contiene el flujo inicial de análisis exploratorio de datos (E
 4. Ejecuta los notebooks en el siguiente orden:
 - `01_eda_inicial.ipynb → análisis exploratorio de datos (EDA)`
 - `02_data_wrangling.ipynb → limpieza y preprocesamiento`
+
+
 Ambos notebooks son totalmente reproducibles.
-
-
-
-
