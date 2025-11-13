@@ -7,8 +7,9 @@ El objetivo del proyecto es analizar las características demográficas y labora
 ---
 
 # Autores
-
-Proyecto desarrollado por Esteban Gómez Valerio, Oscar Josue Rocha Hernandez, Rafael Takata Garcia
+- Esteban Gómez Valerio
+- Oscar Josue Rocha Hernandez
+- Rafael Takata Garcia
 
 ## ⚙️ Requisitos previos
 
