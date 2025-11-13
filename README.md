@@ -6,12 +6,12 @@ El objetivo del proyecto es analizar las características demográficas y labora
 
 ---
 
-# Autores
+## Autores
 - Esteban Gómez Valerio
 - Oscar Josue Rocha Hernandez
 - Rafael Takata Garcia
 
-## ⚙️ Requisitos previos
+## Requisitos previos
 
 - **Python 3.10+** (se recomienda utilizar un entorno virtual)
 - **uv** para la gestión de dependencias
@@ -48,18 +48,15 @@ El objetivo del proyecto es analizar las características demográficas y labora
 
 `03_model_training.ipynb` → entrenamiento y evaluación de modelos predictivos
 
-Ambos notebooks son totalmente reproducibles.
+Los notebooks son totalmente reproducibles.
 
 ___
 
-Principales librerías utilizadas
+## Principales librerías utilizadas
 
 - pandas
-
 - numpy
-
 - matplotlib / seaborn
-
 - scikit-learn
-
 - uv (gestión de entorno y dependencias)
+- mlflow
