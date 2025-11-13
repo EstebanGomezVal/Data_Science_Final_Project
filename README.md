@@ -39,6 +39,7 @@ El objetivo del proyecto es analizar las características demográficas y labora
     ```
 
 4. Ejecuta los notebooks en el siguiente orden:
+
 `00_informe_inicial.ipynb` → descripción general del dataset y objetivos iniciales
 
 `01_eda_inicial.ipynb` → análisis exploratorio de datos (EDA)
