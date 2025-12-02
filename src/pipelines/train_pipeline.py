@@ -19,7 +19,7 @@ from xgboost import XGBClassifier
 from sklearn.pipeline import Pipeline
 from prefect import flow, task
 
-# load env if exists
+# load env
 load_dotenv(override=True)
 
 EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME", "/Users/estebangmzv@gmail.com/income-prediction-prefect")
@@ -30,9 +30,7 @@ mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "databricks"))
 mlflow.set_experiment(EXPERIMENT_NAME)
 
 
-# ----------------------------
-# LOAD & PREPROCESS DATA TASK
-# ----------------------------
+# Cargar y preprocesar datos
 @task(name="Load and Preprocess Data")
 def load_and_preprocess(file_path: str, random_state: int = 42):
     """Return both raw splits (X_train_raw, ...) and processed splits (X_train, ...) plus y and preprocessor."""
@@ -42,7 +40,7 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
     y = df["income"].apply(lambda x: 1 if ">50K" in x else 0)
     X = df.drop(["income", "education"], axis=1)
 
-    # drop possible index column from certain CSVs
+    # drop indice column si existe
     X = X.drop(columns=["index"], errors="ignore")
 
     categorical_cols = [
@@ -52,7 +50,6 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
     numeric_cols = [col for col in X.columns if col not in categorical_cols]
 
     # transformers
-    # use sparse=False for compatibility across sklearn versions
     numeric_transformer = StandardScaler()
     categorical_transformer = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
 
@@ -65,7 +62,7 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
         verbose_feature_names_out=False
     )
 
-    # splits (stratified)
+    # splits (estratificados)
     X_train_raw, X_temp_raw, y_train, y_temp = train_test_split(
         X, y, test_size=0.3, random_state=random_state, stratify=y
     )
@@ -78,30 +75,26 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
     X_val_proc = preprocessor.transform(X_val_raw)
     X_test_proc = preprocessor.transform(X_test_raw)
 
-    # feature names (ColumnTransformer gives names if verbose_feature_names_out=False,
-    # get_feature_names_out exists on transformer)
+    # feature names 
     try:
         feature_names = preprocessor.get_feature_names_out().tolist()
     except Exception:
-        # fallback: create generic names
         feature_names = [f"f_{i}" for i in range(X_train_proc.shape[1])]
 
     X_train = pd.DataFrame(X_train_proc, columns=feature_names, index=X_train_raw.index)
     X_val = pd.DataFrame(X_val_proc, columns=feature_names, index=X_val_raw.index)
     X_test = pd.DataFrame(X_test_proc, columns=feature_names, index=X_test_raw.index)
 
-    # persist preprocessor locally (optional) — useful for debugging
+    # preprocessor local
     pathlib.Path("preprocessor").mkdir(exist_ok=True)
     with open("preprocessor/preprocessor.b", "wb") as f_out:
         pickle.dump(preprocessor, f_out)
 
-    # return raw & processed splits and preprocessor (raw used to log full pipeline)
+    # regresar todo
     return X_train_raw, X_val_raw, X_test_raw, X_train, X_val, X_test, y_train, y_val, y_test, preprocessor
 
 
-# ----------------------------
-# TUNE MODEL FAMILY
-# ----------------------------
+# Tunear familia de modelos
 @task(name="Tune Model Family")
 def tune_model_family(X_train_proc, X_val_proc, y_train, y_val, model_family: str, n_trials: int = 10, random_state: int = 42):
     sampler = TPESampler(seed=random_state)
@@ -164,15 +157,14 @@ def tune_model_family(X_train_proc, X_val_proc, y_train, y_val, model_family: st
 
             mlflow.log_metrics({"f1": f1, "precision": precision, "recall": recall})
 
-            # log candidate model (without preprocessor) so hyperparameter run has the candidate artifact
+            # log modelo candidato (sin preprocesador) para que la corrida de hiperparámetros tenga el artefacto candidato
             input_example = pd.DataFrame(X_val_proc.head(5), columns=X_val_proc.columns)
             try:
                 mlflow.sklearn.log_model(sk_model=model, artifact_path="model", input_example=input_example)
             except Exception:
-                # avoid breaking if log_model fails for some reason (older sklearn/xgb combos)
                 pass
 
-        # Optuna minimizes objective → we want to minimize 1 - f1
+        # Optuna minimiza por eso el return es 1 - f1
         return 1.0 - f1
 
     with mlflow.start_run(run_name=f"{model_family.title()} Hyperparameter Optimization (Optuna)"):
@@ -186,14 +178,12 @@ def tune_model_family(X_train_proc, X_val_proc, y_train, y_val, model_family: st
         return best_params
 
 
-# ----------------------------
-# TRAIN FINAL CHALLENGER
-# ----------------------------
+# Entrenar mdelo final candidato
 @task(name="Train Final Challenger")
 def train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_train, y_val, preprocessor, best_params: dict, model_family: str):
-    """Train using processed data but log the full pipeline (preprocessor + model) so the registered model
-       contains the preprocessor usable by the API."""
-    with mlflow.start_run(run_name=f"Challenger Model: {model_family.title()}") as run:
+    """Entrenar modelo final candidato (preprocessor + model) para que el modelo registrado
+       contenga el preprocesador usable por la API."""
+    with mlflow.start_run(run_name=f"Challenger Modelo: {model_family.title()}") as run:
         mlflow.set_tag("model_family", model_family)
         mlflow.log_params(best_params)
 
@@ -209,7 +199,7 @@ def train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_t
         else:
             raise ValueError(f"Unsupported model family: {model_family}")
 
-        # train on processed features
+        # entrenar con el set completo (train + val)
         model.fit(X_train_proc, y_train)
 
         y_pred = model.predict(X_val_proc)
@@ -219,17 +209,17 @@ def train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_t
 
         mlflow.log_metrics({"f1": f1, "precision": precision, "recall": recall})
 
-        # Build a full sklearn Pipeline: preprocessor expects raw dataframe input
+        # Construir un Pipeline completo de sklearn: el preprocesador espera un DataFrame raw como input
         full_pipeline = Pipeline([
             ("preprocessor", preprocessor),
             ("model", model)
         ])
 
-        # Prepare input example (raw X_val rows) and signature
+        # Preparar input example (filas raw de X_val) y signature
         input_example = X_val_raw.head(5)
         signature = infer_signature(input_example, y_val.head(5))
 
-        # Log the full pipeline so the registered model contains the preprocessor
+        # Log el pipeline completo
         mlflow.sklearn.log_model(
             sk_model=full_pipeline,
             artifact_path="model",
@@ -240,14 +230,12 @@ def train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_t
         return run.info.run_id
 
 
-# ----------------------------
-# COMPARE & PROMOTE CHAMPION
-# ----------------------------
+# Comparar y promover champion
 @task(name="Compare and Promote Champion")
 def compare_and_promote(experiment_id: str):
     client = MlflowClient()
 
-    # find challenger runs ordered by f1 desc (best first)
+    # encontrar runs challenger ordenados por f1 desc (mejor primero)
     runs_df = mlflow.search_runs(
         experiment_ids=[experiment_id],
         filter_string="tags.model_family IN ('random_forest','gradient_boosting','xgboost') AND attributes.run_name LIKE 'Challenger%'",
@@ -256,7 +244,7 @@ def compare_and_promote(experiment_id: str):
 
     top_runs = runs_df.head(2)
 
-    # ensure registered model exists
+    # Crear modelo registrado si no existe
     try:
         client.get_registered_model(name=MODEL_NAME_UC)
     except Exception:
@@ -269,7 +257,7 @@ def compare_and_promote(experiment_id: str):
         run_id = row["run_id"]
         model_uri = f"runs:/{run_id}/model"
 
-        # create model version or find existing model version for that run
+        # crear versión de modelo o encontrar versión existente para esa corrida
         try:
             mv = client.create_model_version(
                 name=MODEL_NAME_UC,
@@ -299,14 +287,12 @@ def compare_and_promote(experiment_id: str):
             print(f"Error setting alias {alias} => {e}")
 
 
-# ----------------------------
-# MAIN FLOW
-# ----------------------------
+# Flujo principal
 @flow(name="Income_Prediction")
 def income_challenger_flow(file_path: str, n_trials_per_family: int = 10):
     load_dotenv(override=True)
 
-    # ensure experiment exists and get its id
+    # asegurar que el experimento exista y obtener su id
     mlflow.set_experiment(EXPERIMENT_NAME)
     experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
     if experiment is None:
@@ -314,30 +300,30 @@ def income_challenger_flow(file_path: str, n_trials_per_family: int = 10):
     else:
         experiment_id = experiment.experiment_id
 
-    # load raw & processed data
+    # cargar datos raw y procesados
     results = load_and_preprocess(file_path)
     (X_train_raw, X_val_raw, X_test_raw,
      X_train_proc, X_val_proc, X_test_proc,
      y_train, y_val, y_test,
      preprocessor) = results
 
-    # tune families
+    # ajustar familias
     best_rf = tune_model_family(X_train_proc, X_val_proc, y_train, y_val, "random_forest", n_trials=n_trials_per_family)
     best_gb = tune_model_family(X_train_proc, X_val_proc, y_train, y_val, "gradient_boosting", n_trials=n_trials_per_family)
     best_xgb = tune_model_family(X_train_proc, X_val_proc, y_train, y_val, "xgboost", n_trials=n_trials_per_family)
 
-    # train final challengers and log full pipeline (preprocessor + model)
+    # entrenar challengers finales y loguear pipeline completo (preprocesador + modelo)
     run_id_rf = train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_train, y_val, preprocessor, best_rf, "random_forest")
     run_id_gb = train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_train, y_val, preprocessor, best_gb, "gradient_boosting")
     run_id_xgb = train_final_challenger(X_train_raw, X_val_raw, X_train_proc, X_val_proc, y_train, y_val, preprocessor, best_xgb, "xgboost")
 
-    # promote champion
+    # promover champion
     compare_and_promote(experiment_id)
 
     print("Pipeline finalizado.")
 
 
 if __name__ == "__main__":
-    # default path (ajusta según tu repo)
+    
     data_file_path = "../../data/raw/adult.csv"
     income_challenger_flow(file_path=data_file_path, n_trials_per_family=10)

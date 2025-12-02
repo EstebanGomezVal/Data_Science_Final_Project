@@ -6,28 +6,20 @@ from pydantic import BaseModel
 from mlflow.tracking import MlflowClient
 from dotenv import load_dotenv
 
-# -------------------------
-# Load env variables
-# -------------------------
+# Cargar variables de entorno
 load_dotenv(override=True)
 
-# -------------------------
 # MLflow / Databricks setup
-# -------------------------
 mlflow.set_tracking_uri("databricks")
 client = MlflowClient()
 
 MODEL_NAME_UC = "workspace.default.income-prediction-classifier-prefect"
 ALIAS = "champion"
 
-# -------------------------
-# Load Champion Model (Pipeline completo)
-# -------------------------
-
+# Cargar modelo champion (Pipeline completo)
 def load_champion_pipeline():
     """
-    Descarga el modelo champion desde Databricks.
-    El modelo champion YA incluye el preprocessor dentro del Pipeline.
+    Descargar el modelo champion desde Databricks.
     """
     model_uri = f"models:/{MODEL_NAME_UC}@{ALIAS}"
     model = mlflow.pyfunc.load_model(model_uri)
@@ -36,19 +28,12 @@ def load_champion_pipeline():
 
 model = load_champion_pipeline()
 
-# -------------------------
 # FastAPI app
-# -------------------------
-
 app = FastAPI(
     title="Income Prediction API",
     version="1.0.0",
     description="Servicio que expone el modelo champion desde Databricks MLflow"
 )
-
-# -------------------------
-# Input Schema
-# -------------------------
 
 class IncomeRequest(BaseModel):
     age: float
@@ -67,26 +52,21 @@ class IncomeRequest(BaseModel):
     native_country: str
 
 
-# -------------------------
 # Health Check
-# -------------------------
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-# -------------------------
-# Prediction endpoint
-# -------------------------
-
+# Prediccion endpoint
 @app.post("/predict")
 def predict_endpoint(payload: IncomeRequest):
 
-    # 1. Convertimos el JSON de entrada en DataFrame
+    # Convertimos el JSON de entrada en DataFrame
     df = pd.DataFrame([payload.model_dump()])
 
-    # 2. Renombramos columnas a los nombres del entrenamiento
+    # Renombramos columnas a los nombres del entrenamiento
     df = df.rename(columns={
         "education_num": "education.num",
         "marital_status": "marital.status",
@@ -96,12 +76,12 @@ def predict_endpoint(payload: IncomeRequest):
         "native_country": "native.country"
     })
 
-    # 3. Pasamos el input directamente al modelo.
-    #    El modelo incluye preprocessor + modelo final.
+    # Pasamos el input directamente al modelo.
+    # El modelo incluye preprocessor + modelo final.
     int_cols = ["age", "fnlwgt", "education.num", "capital.gain", "capital.loss", "hours.per.week"]
     for col in int_cols:
         df[col] = df[col].astype("int64")
-        
+
     pred = model.predict(df)
 
     result = int(pred[0])
