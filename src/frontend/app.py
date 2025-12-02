@@ -92,9 +92,9 @@ if st.button("Predecir"):
 
             # Interpretación del modelo
             if result["class"] == ">50K":
-                texto = "Esta persona gana **más de 50,000 dólares** al año. 🥳"
+                texto = "Esta persona gana **más de 50,000 dólares** al año."
             else:
-                texto = "Esta persona gana **menos o igual a 50,000 dólares** al año. 😔"
+                texto = "Esta persona gana **menos o igual a 50,000 dólares** al año."
 
             st.success(texto)
 
