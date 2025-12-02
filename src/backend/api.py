@@ -1,7 +1,4 @@
-# src/backend/api.py
-
 import os
-import pickle
 import mlflow
 import pandas as pd
 from fastapi import FastAPI
@@ -24,39 +21,20 @@ MODEL_NAME_UC = "workspace.default.income-prediction-classifier-prefect"
 ALIAS = "champion"
 
 # -------------------------
-# Load Champion Model + Preprocessor
+# Load Champion Model (Pipeline completo)
 # -------------------------
 
-def load_champion_and_preprocessor():
+def load_champion_pipeline():
     """
-    Descarga desde Databricks:
-    - Modelo champion del Model Registry
-    - Preprocessor guardado en los artifacts del run
+    Descarga el modelo champion desde Databricks.
+    El modelo champion YA incluye el preprocessor dentro del Pipeline.
     """
-
-    # 1. Cargar modelo champion desde el registry
     model_uri = f"models:/{MODEL_NAME_UC}@{ALIAS}"
     model = mlflow.pyfunc.load_model(model_uri)
-
-    # 2. Obtener run asociado al alias champion
-    mv = client.get_model_version_by_alias(MODEL_NAME_UC, ALIAS)
-    run_id = mv.run_id
-
-    # 3. Descargar preprocessor desde artifacts
-    client.download_artifacts(
-        run_id=run_id,
-        path="preprocessor",
-        dst_path="."      # descarga localmente ./preprocessor/preprocessor.b
-    )
-
-    # 4. Cargar el preprocessor
-    with open("preprocessor/preprocessor.b", "rb") as f:
-        preprocessor = pickle.load(f)
-
-    return model, preprocessor
+    return model
 
 
-model, preprocessor = load_champion_and_preprocessor()
+model = load_champion_pipeline()
 
 # -------------------------
 # FastAPI app
@@ -69,7 +47,7 @@ app = FastAPI(
 )
 
 # -------------------------
-# Marshmallow / Input Schema
+# Input Schema
 # -------------------------
 
 class IncomeRequest(BaseModel):
@@ -92,6 +70,7 @@ class IncomeRequest(BaseModel):
 # -------------------------
 # Health Check
 # -------------------------
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -104,9 +83,10 @@ def health():
 @app.post("/predict")
 def predict_endpoint(payload: IncomeRequest):
 
-    # 1. Convert incoming JSON to DataFrame
+    # 1. Convertimos el JSON de entrada en DataFrame
     df = pd.DataFrame([payload.model_dump()])
 
+    # 2. Renombramos columnas a los nombres del entrenamiento
     df = df.rename(columns={
         "education_num": "education.num",
         "marital_status": "marital.status",
@@ -116,14 +96,17 @@ def predict_endpoint(payload: IncomeRequest):
         "native_country": "native.country"
     })
 
-    # 3. Compute prediction (sklearn model)
+    # 3. Pasamos el input directamente al modelo.
+    #    El modelo incluye preprocessor + modelo final.
+    int_cols = ["age", "fnlwgt", "education.num", "capital.gain", "capital.loss", "hours.per.week"]
+    for col in int_cols:
+        df[col] = df[col].astype("int64")
+        
     pred = model.predict(df)
 
     result = int(pred[0])
 
-    response = {
+    return {
         "prediction": result,
         "class": ">50K" if result == 1 else "<=50K"
     }
-
-    return response
