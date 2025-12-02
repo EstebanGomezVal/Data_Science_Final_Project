@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "databricks-cli>=0.18.0",
     "databricks-sdk>=0.72.0",
+    "fastapi[standard]>=0.121.0",
     "ipykernel>=6.30.1",
     "kagglehub>=0.3.13",
     "mlflow>=3.5.1",
@@ -15,5 +16,6 @@ dependencies = [
     "prefect>=3.6.4",
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
+    "streamlit>=1.51.0",
     "xgboost>=3.1.2",
 ]
