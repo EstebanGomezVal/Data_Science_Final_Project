@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "databricks-cli>=0.18.0",
+    "databricks-sdk>=0.72.0",
     "ipykernel>=6.30.1",
     "kagglehub>=0.3.13",
     "mlflow>=3.5.1",

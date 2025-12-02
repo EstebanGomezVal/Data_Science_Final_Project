@@ -16,16 +16,18 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from xgboost import XGBClassifier
 from prefect import flow, task
+from dotenv import load_dotenv
+import os
 
-# -------------------------
-# Config / constantes
-# -------------------------
+load_dotenv(dotenv_path="../.env", override=True)
+
 EXPERIMENT_NAME = "/Users/estebangmzv@gmail.com/income-prediction-prefect"
 MODEL_NAME_UC = "workspace.default.income-prediction-classifier-prefect"
 
-# -------------------------
-# Tareas Prefect
-# -------------------------
+mlflow.set_tracking_uri("databricks")
+mlflow.set_experiment(EXPERIMENT_NAME)
+
+
 @task(name="Load and Preprocess Data")
 def load_and_preprocess(file_path: str, random_state: int = 42):
     """
@@ -35,7 +37,7 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
     """
     df = pd.read_csv(file_path)
 
-    # Target binario: >50K => 1
+    # Target binario: >50K -> 1, <=50K -> 0
     y = df["income"].apply(lambda x: 1 if ">50K" in x else 0)
     X = df.drop(["income", "education"], axis=1)
 
@@ -62,7 +64,7 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
         verbose_feature_names_out=False
     )
 
-    # Splits: train / val / test (70/15/15 approx)
+    # Splits: train / val / test
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=0.3, random_state=random_state, stratify=y
     )
@@ -70,7 +72,6 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
         X_temp, y_temp, test_size=0.5, random_state=random_state, stratify=y_temp
     )
 
-    # fit_transform only en train
     X_train_proc = preprocessor.fit_transform(X_train)
     X_val_proc = preprocessor.transform(X_val)
     X_test_proc = preprocessor.transform(X_test)
@@ -93,8 +94,6 @@ def load_and_preprocess(file_path: str, random_state: int = 42):
 def tune_model_family(X_train, X_val, y_train, y_val, model_family: str, n_trials: int = 10, random_state: int = 42):
     """
     Optimiza hiperparámetros para una familia (random_forest, gradient_boosting, xgboost)
-    usando Optuna. Loggea cada trial en MLflow (runs anidados).
-    Retorna best_params (dict).
     """
     sampler = TPESampler(seed=random_state)
     study = optuna.create_study(direction="minimize", sampler=sampler)
@@ -158,7 +157,7 @@ def tune_model_family(X_train, X_val, y_train, y_val, model_family: str, n_trial
 
             mlflow.log_metrics({"f1": f1, "precision": precision, "recall": recall})
 
-            # registrar modelo del trial como artefacto (no registrado en registry aún)
+            # registrar modelo del trial como artefacto
             input_example = X_val.head(5)
             signature = infer_signature(input_example, y_val.head(5))
 
@@ -177,7 +176,6 @@ def tune_model_family(X_train, X_val, y_train, y_val, model_family: str, n_trial
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         best_params = study.best_params.copy()
-        # Aseguramos random_state y n_jobs si corresponde
         best_params["random_state"] = random_state
         if model_family == "random_forest":
             best_params["n_jobs"] = -1
@@ -208,7 +206,7 @@ def train_final_challenger(X_train, X_val, y_train, y_val, preprocessor, best_pa
             model = XGBClassifier(**best_params)
         else:
             raise ValueError(f"Familia de modelo desconocida: {model_family}")
-
+        
         model.fit(X_train, y_train)
 
         y_pred = model.predict(X_val)
@@ -224,7 +222,7 @@ def train_final_challenger(X_train, X_val, y_train, y_val, preprocessor, best_pa
             pickle.dump(preprocessor, f_out)
         mlflow.log_artifact("preprocessor/preprocessor.b", artifact_path="preprocessor")
 
-        # Registrar el modelo completo en el run (artifactory)
+        # Registrar el modelo completo en el run
         input_example = X_val.head(5)
         signature = infer_signature(input_example, y_val.head(5))
 
@@ -250,27 +248,22 @@ def compare_and_promote(experiment_id: str):
     # Buscar runs del experimento ordenados por f1 desc
     runs_df = mlflow.search_runs(
         experiment_ids=[experiment_id],
-        filter_string="",  # sin filtros
+        filter_string="", 
         order_by=["metrics.f1 DESC"],
     )
 
-    if runs_df.shape[0] == 0:
-        print("No hay runs en el experimento para comparar.")
-        return
-
-    # Tomar top 2 (si existe)
+    # Tomar top 2
     top_runs = runs_df.head(2)
 
     # Asegurar que el modelo registrado existe
     try:
         client.get_registered_model(name=MODEL_NAME_UC)
     except Exception as e:
-        # crear si no existe - manejo simple
+        # crear si no existe 
         try:
             client.create_registered_model(name=MODEL_NAME_UC)
         except Exception as ee:
-            # si falla la creación, imprimir y seguir (quizá permisos)
-            print(f"Advertencia: no se pudo crear registered model: {ee}")
+            print(f"Fallo en crear modelo {ee}")
 
     # Registrar versiones y asignar alias
     for idx, (_, row) in enumerate(top_runs.iterrows()):
@@ -284,9 +277,9 @@ def compare_and_promote(experiment_id: str):
                 run_id=run_id
             )
         except Exception as e:
-            # si la versión ya existe o hay otro error, intentar recuperar versión existente
-            print(f"Warning creando model version para run {run_id}: {e}")
-            # Intentar buscar versiones existentes que apunten a ese run
+            # si la versión ya existe
+            print(f"Creando model version para run {run_id}: {e}")
+
             mv = None
             versions = client.search_model_versions(f"name='{MODEL_NAME_UC}'")
             for v in versions:
@@ -297,7 +290,6 @@ def compare_and_promote(experiment_id: str):
                 print(f"No se pudo asociar versión para run {run_id}, seguir adelante.")
                 continue
 
-        # Asignar alias: idx==0 => champion, idx==1 => challenger
         alias = "champion" if idx == 0 else "challenger"
         try:
             client.set_registered_model_alias(
@@ -310,10 +302,8 @@ def compare_and_promote(experiment_id: str):
             print(f"Error asignando alias {alias} a la versión {mv.version}: {e}")
 
 
-# -------------------------
 # Flow principal
-# -------------------------
-@flow(name="Income Prediction Challenger & Promotion Flow")
+@flow(name="Income_Prediction")
 def income_challenger_flow(file_path: str, n_trials_per_family: int = 10):
     """
     Flujo principal que:
@@ -328,33 +318,30 @@ def income_challenger_flow(file_path: str, n_trials_per_family: int = 10):
     mlflow.set_experiment(experiment_name=EXPERIMENT_NAME)
     experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
     if experiment is None:
-        # crear experimento localmente si es necesario (comportamiento seguro)
+        # crear experimento localmente si es necesario
         experiment_id = mlflow.create_experiment(EXPERIMENT_NAME)
     else:
         experiment_id = experiment.experiment_id
 
-    # 1) Carga y preprocesamiento
+    # Carga y preprocesamiento
     X_train, X_val, X_test, y_train, y_val, y_test, preprocessor = load_and_preprocess(file_path)
 
-    # 2) Tuning por familias
+    # Tuning por familias
     best_rf = tune_model_family(X_train, X_val, y_train, y_val, "random_forest", n_trials=n_trials_per_family)
     best_gb = tune_model_family(X_train, X_val, y_train, y_val, "gradient_boosting", n_trials=n_trials_per_family)
     best_xgb = tune_model_family(X_train, X_val, y_train, y_val, "xgboost", n_trials=n_trials_per_family)
 
-    # 3) Train final challengers (entrenar con los hyperparams encontrados)
+    # Train final challengers (entrenar con los hyperparams encontrados)
     run_id_rf = train_final_challenger(X_train, X_val, y_train, y_val, preprocessor, best_rf, "random_forest")
     run_id_gb = train_final_challenger(X_train, X_val, y_train, y_val, preprocessor, best_gb, "gradient_boosting")
     run_id_xgb = train_final_challenger(X_train, X_val, y_train, y_val, preprocessor, best_xgb, "xgboost")
 
-    # 4) Comparar y promover en Model Registry
+    # Comparar y promover en Model Registry
     compare_and_promote(experiment_id)
 
     print("Pipeline finalizado.")
 
 
-# -------------------------
-# Exec
-# -------------------------
 if __name__ == "__main__":
-    data_file_path = "../data/raw/adult.csv"
+    data_file_path = "../../data/raw/adult.csv"
     income_challenger_flow(file_path=data_file_path, n_trials_per_family=10)
