@@ -1,0 +1,11 @@
+fastapi==0.123.4 
+mlflow==3.6.0 
+pandas==2.3.3 
+pydantic==2.12.5 
+python-dotenv==1.2.1 
+xgboost==3.1.2 
+psutil==7.1.0  
+numpy==2.3.3 
+scipy==1.16.2 
+pyarrow==21.0.0 
+
