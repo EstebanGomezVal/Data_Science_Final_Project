@@ -9,24 +9,55 @@ Introduce los datos de una persona y obtén la predicción.
 st.sidebar.header("User Input Parameters")
 
 def user_input_features():
+    # Parámetros Numéricos
     age = st.sidebar.number_input("Age", min_value=0, max_value=100, value=30)
-
-    workclass = st.sidebar.text_input("Workclass", "Private")
-    fnlwgt = st.sidebar.number_input("FNLWGT", min_value=0, value=150000)
-
-    education = st.sidebar.text_input("Education", "Bachelors")
-    education_num = st.sidebar.number_input("Education Num", min_value=0, max_value=20, value=13)
-
-    marital_status = st.sidebar.text_input("Marital Status", "Never-married")
-    occupation = st.sidebar.text_input("Occupation", "Prof-specialty")
-    relationship = st.sidebar.text_input("Relationship", "Not-in-family")
-    race = st.sidebar.text_input("Race", "White")
-    sex = st.sidebar.text_input("Sex", "Male")
-
+    fnlwgt = st.sidebar.number_input("FNLWGT", min_value=0, value=1500000)
+    education_num = st.sidebar.number_input("Education Num", min_value=0, max_value=16, value=10)
     capital_gain = st.sidebar.number_input("Capital Gain", min_value=0, value=0)
     capital_loss = st.sidebar.number_input("Capital Loss", min_value=0, value=0)
     hours_per_week = st.sidebar.number_input("Hours per Week", min_value=1, max_value=100, value=40)
+
+    st.sidebar.markdown("---")
+
+    # Parámetros Categóricos
+    
+    # Opciones basadas en el gráfico de 'Distibución de workclass'
+    workclass_options = ['Private', 'Self-emp-not-inc', 'Local-gov', 'State-gov', 
+                         'Self-emp-inc', 'Federal-gov', 'Without-pay', 'Never-worked']
+    workclass = st.sidebar.selectbox("Workclass", workclass_options)
+
+    # Opciones basadas en el gráfico de 'Distibución de education'
+    education_options = ['Bachelors', 'HS-grad', '11th', 'Masters', '9th', 'Some-college', 
+                         'Assoc-acdm', 'Assoc-voc', '7th-8th', 'Prof-school', '5th-6th', 
+                         '10th', 'Preschool', '12th', '1st-4th', 'Doctorate']
+    education = st.sidebar.selectbox("Education", education_options, index=0)
+
+    # Opciones basadas en el gráfico de 'Distibución de marital-status'
+    marital_status_options = ['Never-married', 'Married-civ-spouse', 'Divorced', 'Separated', 
+                              'Widowed', 'Married-spouse-absent', 'Married-AF-spouse']
+    marital_status = st.sidebar.selectbox("Marital Status", marital_status_options)
+
+    # Opciones basadas en el gráfico de 'Distibución de occupation'
+    occupation_options = ['Prof-specialty', 'Craft-repair', 'Exec-managerial', 'Adm-clerical', 
+                          'Sales', 'Other-service', 'Machine-op-inspct', 'Transport-moving', 
+                          'Handlers-cleaners', 'Farming-fishing', 'Tech-support', 'Protective-serv', 
+                          'Priv-house-serv', '? / Armed-Forces'] # Agrupar "?"
+    occupation = st.sidebar.selectbox("Occupation", occupation_options)
+
+    # Opciones basadas en el gráfico de 'Distibución de relationship'
+    relationship_options = ['Husband', 'Not-in-family', 'Own-child', 'Unmarried', 'Wife', 'Other-relative']
+    relationship = st.sidebar.selectbox("Relationship", relationship_options)
+
+    # Opciones basadas en el gráfico de 'Distibución de race'
+    race_options = ['White', 'Black', 'Asian-Pac-Islander', 'Amer-Indian-Eskimo', 'Other']
+    race = st.sidebar.selectbox("Race", race_options)
+
+    # Opciones basadas en el gráfico de 'Distibución de sex'
+    sex_options = ['Male', 'Female']
+    sex = st.sidebar.selectbox("Sex", sex_options)
+
     native_country = st.sidebar.text_input("Native Country", "United-States")
+
 
     input_dict = {
         "age": int(age),
@@ -61,9 +92,9 @@ if st.button("Predecir"):
 
             # Interpretación del modelo
             if result["class"] == ">50K":
-                texto = "Esta persona gana **más de 50,000 dólares** al año."
+                texto = "Esta persona gana **más de 50,000 dólares** al año. 🥳"
             else:
-                texto = "Esta persona gana **menos o igual a 50,000 dólares** al año."
+                texto = "Esta persona gana **menos o igual a 50,000 dólares** al año. 😔"
 
             st.success(texto)
 
